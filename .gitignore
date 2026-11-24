@@ -35,3 +35,6 @@ test/*.txt
 *.swo
 .DS_Store
 Thumbs.db
+
+# gdb
+.gdb_history
