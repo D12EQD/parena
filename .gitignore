@@ -1,0 +1,37 @@
+# 构建输出目录
+build/
+
+# 编译数据库（由构建系统生成）
+compile_commands.json
+
+# 缓存目录（clangd 等工具产生）
+.cache/
+.clangd/
+
+# IDE 配置目录
+.vscode/
+.idea/
+*.iml
+
+# 编译中间文件
+*.o
+*.obj
+*.d
+*.so
+*.a
+*.exe
+*.dll
+
+# 根目录下可能产生的可执行文件（手动编译或 nob 生成）
+/nob_build
+/main
+
+# 其他文件
+test/*.txt
+
+# 编辑器临时文件
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

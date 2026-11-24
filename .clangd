@@ -1,0 +1,8 @@
+CompileFlags:
+  Add:
+    - -Iinclude
+    - -I.
+    - -std=c23
+    - -Wall
+InlayHints:
+  ParameterNames: No          # 不显示普通参数名
