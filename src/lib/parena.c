@@ -334,7 +334,7 @@ Pmark pchain_get_mark(Pchain* pc){
 }
 
 i64 pchain_rewind(Pchain *pc, Pmark mark){
-    if (!pc || pc != mark.belong){
+    if ( !(pc) || ( pc != mark.belong ) || !(pc->parena) ){
         pr_warn("mark not belong to pchain");
         return -1;
     }
@@ -363,4 +363,3 @@ void pchain_recycle(Pchain *pc){
     pc->parena = NULL;
     pc->tail_remain = 0;
 }
-
