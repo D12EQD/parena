@@ -175,7 +175,7 @@ void test_recycle(void){
 
     
     for (int i = 0; i < 20; i ++){
-        parena_recycle_slot(a, buffer[i]);
+        parena_recycle_slot(buffer[i]);
     }
 
     test_note("释放正常");
@@ -192,7 +192,7 @@ void test_recycle(void){
     test_expect("正常分配内存成功 * 2", flag, true);
 
     for (int i = 0; i < 127; i ++){
-        parena_recycle_slot(a, buffer[i]);
+        parena_recycle_slot(buffer[i]);
     }
 
     test_note("释放正常 * 2");

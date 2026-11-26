@@ -26,3 +26,10 @@ void test_case(const char *name);
 void test_expect(const char *what, i64 got, i64 want);
 void test_note(const char *what);
 void test_summary();
+double test_nstime_get();
+
+#define get_func_cost_time(func) ({       \
+    double time = test_nstime_get();    \
+    func;                               \
+    test_nstime_get() - time;           \
+ })

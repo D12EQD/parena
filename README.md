@@ -6,7 +6,7 @@ You need a parena to malloc. It is a single thread and quick memory allocate pro
 ## quick start
 
 ```
-gcc build/nob.c -o build/nob
+gcc nob.c -o build/nob
 ./build/nob run test/single/*.c
 ```
 

@@ -11,11 +11,11 @@
 
 struct Parena_s;
 
-static const uint16_t slot_level[] = {
-    16, 32, 64, 128, 292, 511, 584, 1022
+static const u64 SLOT_LEVEL[] = {
+    8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096
 };
 
-#define slot_level_count ( sizeof(slot_level)/sizeof(slot_level[0]))
+#define SLOT_LEVEL_COUNT ( sizeof(SLOT_LEVEL)/sizeof(SLOT_LEVEL[0]))
 
 // size == 40B 对齐 8B
 typedef struct RefBlockHeader_S {
@@ -27,12 +27,6 @@ typedef struct RefBlockHeader_S {
     u16         keep_alive;     // 保持不死的Refhead
 }RefBlockHeader; 
 
-/*
- *  若作为普通Block，看作一整块内存
- *
- *  若作为 RefBlock，内部按照 Slot Size 来分配内存
- *  头部存放一个 (RefBlockHeader*) 指向 RefBlockHeader
- */
 typedef struct Block_t{
     u8 __data[PA_BLOCK_SIZE];
 }Block;
@@ -40,17 +34,27 @@ typedef struct Block_t{
 /* Ping's Arena manager = Parena */
 typedef struct Parena_s{
     List empty_list;                        // 空闲块链表
-    List empty_rf_list;                     // 空闲 RefBlockHeader 链表
-    List slot_list[slot_level_count];       // slot 链表
+    List rbh_list;                          // rhb list
+    List* slot_list;                        // slot 链表
     void *base;                             // 内存起始地址，用于合法内存范围判断
+    void *rbh_base;                         // rbh base 地址
     u64 block_count;                        // 内存块数量
     u64 empty_block_count;                  // 内存空闲块数量
+    u64* slot_level;                        // 内置 slot_level 等级，支持用户输入自己想要的等级分配
+    u64 slot_level_count;                   // slot_level 等级数量
 } Parena;
 
-Parena *parena_new(size_t size);
+typedef struct {
+    u64* slot_level;
+    u64 slot_level_count;
+}ParenaOpt;
+
+Parena* parena_new_imple(size_t size, ParenaOpt opt);
+#define parena_new(size, ...) parena_new_imple((size), (ParenaOpt){ __VA_OPT__(__VA_ARGS__) })
+
 void parena_free(Parena *pa);
 void *parena_alloc_slot(Parena *a,size_t size);
-void parena_recycle_slot(Parena* a, void * address);
+void parena_recycle_slot(void * ptr);
 
 typedef struct PchainBlock_S {
     ListNode node;
@@ -64,7 +68,6 @@ typedef struct Pchain_S {
     size_t tail_remain;         // tail 剩余字节数量
 } Pchain;
 
-
 typedef struct Pmark_S{
     Pchain* belong;
     PchainHead* mark;
@@ -77,4 +80,4 @@ Pmark pchain_get_mark(Pchain *pc);
 i64 pchain_rewind(Pchain *pc,Pmark mark);
 void pchain_recycle(Pchain *pc);
 
-u64 parena_get_slot_level(u64 need_size);
+u64 parena_get_slot_level(Parena *pa, u64 need_size);

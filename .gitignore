@@ -22,12 +22,9 @@ compile_commands.json
 *.exe
 *.dll
 
-# 根目录下可能产生的可执行文件（手动编译或 nob 生成）
-/nob_build
-/main
-
 # 其他文件
 test/*.txt
+test/data/
 
 # 编辑器临时文件
 *~
@@ -38,6 +35,7 @@ Thumbs.db
 
 # gdb
 .gdb_history
+
 
 # AI
 .codebuddy/

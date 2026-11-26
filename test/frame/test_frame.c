@@ -1,5 +1,7 @@
+#define _GNU_SOURCE
 #include "test_frame.h"
 #include <stdio.h>
+#include <time.h>
 
 TestCtx testctx = {0};
 void (*test_func[1024])(void);
@@ -11,6 +13,13 @@ void test_ctx_reset() {
     testctx.fail = 0;
     testctx.note = 0;
 }
+
+double test_nstime_get(){
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1e9 + (double)ts.tv_nsec;
+}
+
 
 /* 执行测试函数 */
 void test_case(const char *name) {

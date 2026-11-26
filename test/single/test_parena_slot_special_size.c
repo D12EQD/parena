@@ -202,6 +202,11 @@ static void test_mixed(size_t iters) {
         }
         size_t sz; PICK_SIZE(sz);
         ring[slot] = parena_alloc_slot(a, sz);
+        u8* write = ring[slot];
+
+        write[0] = 0;
+        write[sz - 1] = 0;
+
         ops++;
     }
     double t1 = now_ns();
@@ -260,13 +265,12 @@ void test_mem_leak(){
     test_note("内存未检测泄露");
 }
 
-int main(void) {
-    setvbuf(stdout, NULL, _IONBF, 0);
-    srand(0x1234);   /* D 用固定 seed，保证可复现 */
-
+void test_backup(){
     pr_cont_debug("=== parena single-thread benchmark (addr-only) ===\n");
-    pr_cont_debug("arena=%dMB  pure_max=%d  steady=%d  burst=%dx%d\n\n",
-           ARENA_SIZE, PURE_MAX, STEADY_ITERS, BURST_ROUNDS, BURST_N);
+    pr_cont_debug(
+        "arena=%dMB  pure_max=%d  steady=%d  burst=%dx%d\n\n",
+        ARENA_SIZE, PURE_MAX, STEADY_ITERS, BURST_ROUNDS, BURST_N
+    );
 
     pr_cont_debug("--- A. Pure alloc/free (cold, no interleave) ---\n");
     test_pure_alloc(16,  "tiny");
@@ -288,11 +292,16 @@ int main(void) {
 
     pr_cont_debug("\n--- E. All size classes steady ---\n");
     test_all_classes();
+}
 
-    // 耗时过长
-    // pr_cont_debug("\n--- F. test_mem_leak test_mem_leak ---\n");
-    // test_mem_leak();
+void test_init(){
+    // set_filter(LogDebug);
+    setvbuf(stdout, NULL, _IONBF, 0);
+    srand(0x1234);
+}
 
-    pr_cont_debug("\nsink=%lx\n", (unsigned long)g_sink);
+int main(void) {
+    test_init();
+    test_mixed(200000000);
     return 0;
 }
