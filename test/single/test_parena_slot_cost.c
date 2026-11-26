@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <time.h>
 #include "lib/logger.h"
-#include "lib/ping_arena.h"
+#include "lib/parena.h"
 #include "frame/test_frame.h"
 
 #define ARENA_SIZE      PA_LIMIT_SIZE
@@ -25,7 +25,7 @@ static inline double now_ns(void) {
 
 static void pr(const char *name, size_t nops, double ns) {
     if (!nops || ns <= 0) return;
-    printf("%-52s %10zu ops  %10.2f ms  %9.2f ns/op  %9.2f Mops/s\n",
+    pr_cont_debug("%-52s %10zu ops  %10.2f ms  %9.2f ns/op  %9.2f Mops/s\n",
            name, nops, ns / 1e6,
            ns / (double)nops,
            (double)nops / ns * 1e3);
@@ -69,7 +69,7 @@ static void test_pure_alloc(size_t size, const char *tag) {
     snprintf(lbl, sizeof(lbl), "A1 pure alloc [%-5s size=%4zu]", tag, size);
     pr(lbl, ok, t1 - t0);
     if (ok < PURE_MAX)
-        printf("   (arena exhausted after %zu allocs)\n", ok);
+        pr_cont_debug("   (arena exhausted after %zu allocs)\n", ok);
 
     t0 = now_ns();
     for (size_t i = 0; i < ok; i++)
@@ -112,6 +112,7 @@ static void test_steady(size_t size, const char *tag, size_t n_target, size_t it
         live[idx] = parena_alloc_slot(a, size);
         if (++idx >= filled) idx = 0;
     }
+
     double t1 = now_ns();
     if (filled) g_sink = (uintptr_t)live[0];
 
@@ -224,39 +225,74 @@ static void test_all_classes(void) {
     for (int s = 0; s < NSIZE; s++) {
         char tag[16];
         snprintf(tag, sizeof(tag), "sc%-4zu", sizes[s]);
-        test_steady(sizes[s], tag, 50000, 20000000);
+        test_steady(sizes[s], tag, 50000, 30000000);
     }
+}
+
+void *buffer[100000];
+
+void test_mem_leak(){
+    Parena * pa = parena_new(0);
+    int top_size = -1;
+
+    for (int i = 0; i < 10000; i ++){
+        int idx = 0;
+        while (1){
+            buffer[idx] = parena_alloc_slot(pa, 510);
+            if (!buffer[idx]){
+                if (top_size == -1) top_size = idx;
+                else{
+                    if (top_size != idx){
+                        test_note("内存泄露");
+                        return;
+                    }
+                }
+                break;
+            }
+            idx ++;
+        }
+
+        for (int j = 0; j <= idx; j ++){
+            parena_recycle_slot(pa, buffer[j]);
+        }
+    }
+
+    test_note("内存未检测泄露");
 }
 
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     srand(0x1234);   /* D 用固定 seed，保证可复现 */
 
-    printf("=== ping_arena single-thread benchmark (addr-only) ===\n");
-    printf("arena=%dMB  pure_max=%d  steady=%d  burst=%dx%d\n\n",
+    pr_cont_debug("=== parena single-thread benchmark (addr-only) ===\n");
+    pr_cont_debug("arena=%dMB  pure_max=%d  steady=%d  burst=%dx%d\n\n",
            ARENA_SIZE, PURE_MAX, STEADY_ITERS, BURST_ROUNDS, BURST_N);
 
-    printf("--- A. Pure alloc/free (cold, no interleave) ---\n");
+    pr_cont_debug("--- A. Pure alloc/free (cold, no interleave) ---\n");
     test_pure_alloc(16,  "tiny");
     test_pure_alloc(64,  "mid");
     test_pure_alloc(512, "big");
 
-    printf("\n--- B. Steady state (alloc+free pair, live set fixed) ---\n");
+    pr_cont_debug("\n--- B. Steady state (alloc+free pair, live set fixed) ---\n");
     test_steady(16,  "tiny", 500000, STEADY_ITERS);
     test_steady(64,  "mid",  200000, STEADY_ITERS);
     test_steady(512, "big",  100000, STEADY_ITERS);
 
-    printf("\n--- C. Burst (alloc N, free N, repeat) ---\n");
+    pr_cont_debug("\n--- C. Burst (alloc N, free N, repeat) ---\n");
     test_burst(16,  "tiny");
     test_burst(64,  "mid");
     test_burst(512, "big");
 
-    printf("\n--- D. Mixed size workload ---\n");
+    pr_cont_debug("\n--- D. Mixed size workload ---\n");
     test_mixed(20000000);
 
-    printf("\n--- E. All size classes steady ---\n");
+    pr_cont_debug("\n--- E. All size classes steady ---\n");
     test_all_classes();
 
-    printf("\nsink=%lx\n", (unsigned long)g_sink);
+    // 耗时过长
+    // pr_cont_debug("\n--- F. test_mem_leak test_mem_leak ---\n");
+    // test_mem_leak();
+
+    pr_cont_debug("\nsink=%lx\n", (unsigned long)g_sink);
     return 0;
 }

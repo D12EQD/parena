@@ -5,7 +5,7 @@
 #include "def.h"
 
 int log_fd[LogLvCount];
-char log_temp[512];
+char log_temp[1024];
 
 u64 log_filter_level;
 

@@ -11,29 +11,20 @@
 
 struct Parena_s;
 
-/* 
- *  内存小于等于 slot_level 会划分为引用计数分配接口 
- *  最小值不应小于 sizeof(List)
- *  最大值不应大于 PA_BLOCK_SIZE
- *  ref block 需要空出一个 ListNode，所以数字很奇怪
- *  该数字从 PA_BLOCK_SIZE - sizeof(List) 的因数选取
- */
 static const uint16_t slot_level[] = {
-    28, 56, 73, 146, 292, 511, 584, 1022
+    16, 32, 64, 128, 292, 511, 584, 1022
 };
 
 #define slot_level_count ( sizeof(slot_level)/sizeof(slot_level[0]))
 
-
-// size == 28B
-typedef struct RefBlockHeader {
+// size == 40B 对齐 8B
+typedef struct RefBlockHeader_S {
     ListNode    node;           // 挂到 slot_list[slot_level] 或 full_list[slot_level]
     List        free_list;      // 块内空闲槽链表
     u16         free_count;     // 当前空闲槽数
     u16         total_count;    // 该块总槽数
     u16         slot_level;     // 属于哪个id
     u16         keep_alive;     // 保持不死的Refhead
-    // 保持28B
 }RefBlockHeader; 
 
 /*
@@ -56,8 +47,34 @@ typedef struct Parena_s{
     u64 empty_block_count;                  // 内存空闲块数量
 } Parena;
 
-
 Parena *parena_new(size_t size);
 void parena_free(Parena *pa);
 void *parena_alloc_slot(Parena *a,size_t size);
 void parena_recycle_slot(Parena* a, void * address);
+
+typedef struct PchainBlock_S {
+    ListNode node;
+} PchainHead;
+
+#define PCHAIN_BLOCK_SIZE ( PA_BLOCK_SIZE - sizeof(PchainHead) )
+
+typedef struct Pchain_S {
+    List list;                  // Pc (PchainBlock) 链表
+    Parena* parena;             // 所属 Parena
+    size_t tail_remain;         // tail 剩余字节数量
+} Pchain;
+
+
+typedef struct Pmark_S{
+    Pchain* belong;
+    PchainHead* mark;
+    size_t tail_remain;
+}Pmark;
+
+void pchain_init(Parena *pa,Pchain *pc);
+bool pchain_append(Pchain *pc,size_t size);
+Pmark pchain_get_mark(Pchain *pc);
+i64 pchain_rewind(Pchain *pc,Pmark mark);
+void pchain_recycle(Pchain *pc);
+
+u64 parena_get_slot_level(u64 need_size);

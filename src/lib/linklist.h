@@ -36,6 +36,7 @@ typedef struct List_s List;
 
 /* 从链表头部获取一个数据 不保证链表安全 */
 #define list_get_front(l) (void *)( ((List*)l)->begin )
+#define list_get_back(l) (void *)( ((List*)l)->end )
 
 bool list_delete_imple(List *l,ListNode *node);
 bool list_delete_back(List *l);

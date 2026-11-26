@@ -38,3 +38,6 @@ Thumbs.db
 
 # gdb
 .gdb_history
+
+# AI
+.codebuddy/

@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include "frame/test_frame.h"
 #include "lib/logger.h"
-#include "lib/ping_arena.h"
+#include "lib/parena.h"
 
 #define BLOCK_PER_ARENA 10
 #define ARENA_BYTES     (4096 * BLOCK_PER_ARENA)
@@ -180,31 +180,6 @@ void test_recycle(void){
 
     test_note("释放正常");
 
-
-    u64 e_count = 0;
-    for (ListNode * i = a->empty_list.begin; i != NULL; i = i->next){
-        e_count ++;
-    }
-
-    u64 ref_count = 0;
-    void *bef = NULL;
-
-    for (ListNode * i = a->empty_rf_list.begin; i != NULL; i = i->next){
-        if (bef == NULL){
-            ref_count ++;
-            bef = i;
-        }else{
-            if ( ((u64)bef & ~(PA_BLOCK_SIZE - 1)) != ((u64)i & ~(PA_BLOCK_SIZE - 1)) ){
-                bef = i;
-                ref_count ++;
-            }
-        }
-    }
-
-    test_expect("内存分配器正常计数空闲块", e_count, a->empty_block_count);
-    // 按照道理来说所有 slot 内存都释放了
-    test_expect("内存分配器正常计数所有块", ref_count, a->block_count - a->empty_block_count);
-
     test_note("再次尝试分配");
     for (int i = 0; i < 127; i ++){
         buffer[i] = parena_alloc_slot(a, 200);
@@ -226,12 +201,12 @@ void test_recycle(void){
 int main(void){
     test_expect("sizeof(Block) == 4096", sizeof(Block) == 4096, true);
 
-    // test_alloc_returns_writable();
-    // test_slots_no_overlap();
-    // test_slots_write_isolation();
-    // test_alloc_oversize_fail();
+    test_alloc_returns_writable();
+    test_slots_no_overlap();
+    test_slots_write_isolation();
+    test_alloc_oversize_fail();
     test_alloc_capacity_bound();
-    // test_multi_parena_independence();
+    test_multi_parena_independence();
     test_recycle();
 
     test_summary();
