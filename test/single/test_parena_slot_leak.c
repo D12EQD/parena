@@ -19,6 +19,7 @@ void test_mem_leak(){
         while (1){
             size_t sz = rand() % 64 + 1;
             buffer[idx] = parena_alloc_slot(pa, sz);
+            pr_debug("idx = %d", idx);
             if (!buffer[idx]){
                 if (top_size == -1) top_size = idx;
                 else{
@@ -35,7 +36,7 @@ void test_mem_leak(){
         }
 
         for (int j = 0; j < idx; j ++){
-            parena_recycle_slot(pa, buffer[j]);
+            parena_recycle_slot(buffer[j]);
         }
     }
 

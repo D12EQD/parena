@@ -10,25 +10,26 @@
 #define ARENA_BYTES     (4096 * BLOCK_PER_ARENA)
 
 /* 1. alloc 返回的指针必须能完整写入请求的 size 字节 */
-void test_alloc_returns_writable(void){
-    test_case("alloc 返回可写内存");
+bool test_alloc_returns_writable(bool info){
+    if (info) test_case("alloc 返回可写内存");
     Parena *a = parena_new(ARENA_BYTES);
-    test_expect("arena 创建成功", a != NULL, true);
-    if (!a) return;
+    if (info)  test_expect("arena 创建成功", a != NULL, true);
+    if (!a) return false;
 
     unsigned char *p = parena_alloc_slot(a, 64);
-    test_expect("64B 分配成功", p != NULL, true);
-    if (!p) { parena_free(a); return; }
+    if (info) test_expect("64B 分配成功", p != NULL, true);
+    if (!p) { parena_free(a); return false; }
 
     memset(p, 0xAB, 64);
-    test_expect("64B 内首字节可读回", p[0]  == 0xAB, true);
-    test_expect("64B 内尾字节可读回", p[63] == 0xAB, true);
+    if (info) test_expect("64B 内首字节可读回", p[0]  == 0xAB, true);
+    if (info) test_expect("64B 内尾字节可读回", p[63] == 0xAB, true);
 
     void *q = parena_alloc_slot(a, 64);
-    test_expect("第二次分配成功", q != NULL, true);
-    test_expect("两次分配地址不同", q != p, true);
+    if (info) test_expect("第二次分配成功", q != NULL, true);
+    if (info) test_expect("两次分配地址不同", q != p, true);
 
     parena_free(a);
+    return true;
 }
 
 /* 2. 多次分配返回的指针两两不同 */
@@ -103,8 +104,8 @@ void test_alloc_oversize_fail(void){
     test_expect("arena 创建成功", a != NULL, true);
     if (!a) return;
 
-    test_expect("4096B 分配失败",   parena_alloc_slot(a, 4096)        == NULL, true);
-    test_expect("8192B 分配失败",   parena_alloc_slot(a, 8192)        == NULL, true);
+    test_expect("4096B 分配成功",   parena_alloc_slot(a, 4096) != NULL, true);
+    test_expect("8192B 分配失败",   parena_alloc_slot(a, 8192) == NULL, true);
     test_expect("1MB  分配失败",    parena_alloc_slot(a, (size_t)1<<20) == NULL, true);
 
     void *p = parena_alloc_slot(a, 16);
@@ -121,12 +122,14 @@ void test_alloc_capacity_bound(void){
     if (!a) return;
 
     size_t cnt = 0;
-    while (parena_alloc_slot(a, 16) != NULL) cnt++;
+    for (cnt = 1; cnt <= 2562; cnt ++){
+        if (parena_alloc_slot(a, 16) == NULL){
+            cnt --;
+            break;
+        }
+    }
 
-    /* 下界：10 块，每块至少 10 槽 => 100（极保守）
-       上界：10*4096/16 = 2560 */
-    test_expect("分配数量 >= 100",  cnt >= 100, true);
-    test_expect("分配数量 <= 2560", cnt <= (size_t)BLOCK_PER_ARENA * 4096 / 16, true);
+    test_expect("分配数量 == 2560", cnt == (size_t)BLOCK_PER_ARENA * 4096 / 16, true);
 
     void *extra = parena_alloc_slot(a, 16);
     test_expect("耗尽后再分配返回 NULL", extra == NULL, true);
@@ -163,6 +166,7 @@ void test_recycle(void){
 
     void *buffer[128];
     bool flag = true;
+
     for (int i = 0; i < 20; i ++){
         buffer[i] = parena_alloc_slot(a, 20 * i + 1);
         if (!buffer[i]){
@@ -198,15 +202,42 @@ void test_recycle(void){
     test_note("释放正常 * 2");
 }
 
+void test_global_arena_behavior(){
+    test_case("全局 arena 测试");
+    bool flag = true;
+    for (int i = 0; i < 20; i ++){
+        if (!test_alloc_returns_writable(false)){
+            flag = false;
+        }
+    }
+
+    test_expect("global arena 分配释放正常", flag, true);
+
+    Parena *pa[200];
+    int i = 0;
+    for (i = 0; i < 200; i ++){
+        pa[i] = parena_new(0);
+        if (!pa[i]) break;
+    }
+
+    for (int j = 0; j < i; j ++){
+        parena_free(pa[j]);
+    }
+
+    test_note("global arena 没有出现异常");
+}
+
 int main(void){
     test_expect("sizeof(Block) == 4096", sizeof(Block) == 4096, true);
 
-    test_alloc_returns_writable();
+    test_alloc_returns_writable(true);
+    test_global_arena_behavior();
+
     test_slots_no_overlap();
     test_slots_write_isolation();
     test_alloc_oversize_fail();
-    test_alloc_capacity_bound();
     test_multi_parena_independence();
+    test_alloc_capacity_bound();
     test_recycle();
 
     test_summary();

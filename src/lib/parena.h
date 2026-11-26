@@ -12,7 +12,7 @@
 struct Parena_s;
 
 static const u64 SLOT_LEVEL[] = {
-    8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096
+    16, 32, 64, 128, 256, 512, 1024, 2048, 4096
 };
 
 #define SLOT_LEVEL_COUNT ( sizeof(SLOT_LEVEL)/sizeof(SLOT_LEVEL[0]))
@@ -34,8 +34,7 @@ typedef struct Block_t{
 /* Ping's Arena manager = Parena */
 typedef struct Parena_s{
     List empty_list;                        // 空闲块链表
-    List rbh_list;                          // rhb list
-    List* slot_list;                        // slot 链表
+    List* slot_list;                        // slot 链表 存放不同等级的 rbh
     void *base;                             // 内存起始地址，用于合法内存范围判断
     void *rbh_base;                         // rbh base 地址
     u64 block_count;                        // 内存块数量
@@ -56,28 +55,3 @@ void parena_free(Parena *pa);
 void *parena_alloc_slot(Parena *a,size_t size);
 void parena_recycle_slot(void * ptr);
 
-typedef struct PchainBlock_S {
-    ListNode node;
-} PchainHead;
-
-#define PCHAIN_BLOCK_SIZE ( PA_BLOCK_SIZE - sizeof(PchainHead) )
-
-typedef struct Pchain_S {
-    List list;                  // Pc (PchainBlock) 链表
-    Parena* parena;             // 所属 Parena
-    size_t tail_remain;         // tail 剩余字节数量
-} Pchain;
-
-typedef struct Pmark_S{
-    Pchain* belong;
-    PchainHead* mark;
-    size_t tail_remain;
-}Pmark;
-
-void pchain_init(Parena *pa,Pchain *pc);
-bool pchain_append(Pchain *pc,size_t size);
-Pmark pchain_get_mark(Pchain *pc);
-i64 pchain_rewind(Pchain *pc,Pmark mark);
-void pchain_recycle(Pchain *pc);
-
-u64 parena_get_slot_level(Parena *pa, u64 need_size);

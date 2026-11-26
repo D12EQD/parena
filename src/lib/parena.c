@@ -16,14 +16,15 @@ typedef struct{
 
 global_parena gpa;
 
-static inline Parena* get_global_parena_from_ptr(void *ptr, size_t size);
-static inline bool register_global_parena(Parena* pa);
-static inline void ref_head_init(RefBlockHeader *head, u16 level, bool keep_alive);
-static inline bool is_safe_ptr(Parena *a, void *ptr, size_t size);
-static inline void block_recycle(Block* block);
-static inline Block* block_new(Parena* pa, RefBlockHeader ** out);
+/* 该地址是否对该Parena有效 */
+static inline bool is_safe_ptr(Parena *a, void *ptr, size_t size){
+    bool res =  (
+        ( (u8*)ptr >= (u8*)a->base ) && 
+        ( ( (u8*)ptr + size ) <= ((u8*)a->base) + a->block_count * PA_BLOCK_SIZE )
+    );
+    return res;
+}
 
-// ================== parena manager ================
 /*  
  *  该操作应在 parena_new 以及其他通用操作中调用
  *  returns :
@@ -65,13 +66,13 @@ static inline void unregister_global_parena(Parena *pa){
     PANIC("a parena don't exist?");
 }
 
-static inline Parena* get_global_parena_from_ptr(void *ptr, size_t size){
-    if likely(is_safe_ptr(gpa.hot_pa, ptr, size)){
+static inline Parena* get_global_parena_from_ptr(void *ptr){
+    if likely(is_safe_ptr(gpa.hot_pa, ptr, 1)){
         return gpa.hot_pa;
     }
 
     for (int i = 0; i < GPA_MAX_COUNT; i ++){
-        if (is_safe_ptr(gpa.cache[i], ptr, size)){
+        if (is_safe_ptr(gpa.cache[i], ptr, 1)){
             gpa.hot_pa = gpa.cache[i];
             return gpa.hot_pa;
         }
@@ -81,40 +82,29 @@ static inline Parena* get_global_parena_from_ptr(void *ptr, size_t size){
 }
 
 static inline RefBlockHeader* get_head_from_pa_and_ptr(Parena* pa, void *ptr){
-    ASSERT(is_safe_ptr(pa, ptr, PA_BLOCK_SIZE));
-
-    u64 idx = ( (u8*)ptr - (u8*)pa->rbh_base ) / sizeof(RefBlockHeader);
-    return &( (RefBlockHeader *)pa->rbh_base )[idx];
+    u64 idx = ( (u8*)ptr - (u8*)pa->base ) >> PA_BLOCK_LOG_SIZE;
+    return ( pa->rbh_base + idx * sizeof(RefBlockHeader) );
 }
 
 // ============ basic opeation ============
 
 /* 
- *  拆分一个块给 head，作为新 slot 使用
- *  该 Block 全部地址都视为可以使用的
- *  调用者需要保证 lv 是合法的，这里不检查
+ *  拆分一个连续地址，按照某个大小，一块一块拆分进入 RefHead
+ *  returns:
+ *      u64 加入了多少新数据
  */
-static inline bool split_block_to_slot(Parena* a, RefBlockHeader* head, u16 lv){
-    void * new_block = block_new(a, &head);
-    if unlikely(!new_block){
-        return false;
+static inline u64 split_mem_to_list(List *head, void * start, size_t sz, size_t slot_sz){
+    ASSERT(slot_sz >= sizeof(ListNode));
+    u64 res = 0;
+    for (void *i = start, *end = start + sz; i + slot_sz <= end; i += slot_sz){
+        list_insert_front(head, i);
+        res ++;
     }
 
-    List *slot_list = &head->free_list;
-    for (
-        void *i = new_block;
-        i + a->slot_level[lv] <= new_block + PA_BLOCK_SIZE; 
-        i += a->slot_level[lv]
-    ){
-        list_insert_front(slot_list, i);
-        head->free_count++;
-        head->total_count++;
-    }
-
-    return true;
+    return res;
 }
 
-static inline void ref_head_init(RefBlockHeader *head, u16 level, bool keep_alive){
+static inline void ref_head_init(RefBlockHeader *head, u64 level, bool keep_alive){
     head->slot_level = level;
     head->free_count = 0;
     head->total_count = 0;
@@ -122,51 +112,69 @@ static inline void ref_head_init(RefBlockHeader *head, u16 level, bool keep_aliv
     list_init(&(head->free_list));
 }
 
-/* 
- *  获取一个block 从 pa->empty_list 中 并且删除 
- *  同时获取对应block 对应的 RefHead
- */
-static inline Block* block_new(Parena* pa, RefBlockHeader** out_head_ptr){
-    List *list = &pa->empty_list;
+static inline Block* block_new(Parena *pa){
+    if (list_is_empty(&pa->empty_list)){
+        return NULL;
+    }
 
-    if unlikely(list_is_empty(list)) return NULL;
+    Block* res = (Block *)list_get_front(&pa->empty_list);
+    list_delete_front(&pa->empty_list);
 
     ASSERT(pa->empty_block_count);
     pa->empty_block_count --;
+    return res;
+}
 
-    Block *block = (Block *)list->begin; 
-    list_delete_front(list);
+/* 
+ *  获取一个block 从 pa->empty_list 中 并且删除 
+ *  同时获取对应 block 对应的 RefHead，并且调用 split_block_to_slot 将其中的数据加入
+ *  保证获取到的 Head 已经可以是可以从其中提取 slot 的对象，并且保证该 Head 加入
+ *   NOTE: keep_alive 在这设计，若需要实验则从这里开始
+ *
+ *  args:
+ *      pa parena
+ *      u64 level 槽位等级
+ *  returns:
+ *      out_head_ptr return地址
+ */
+static inline RefBlockHeader* ref_block_new(Parena* pa, u64 level){
+    Block * block = block_new(pa);
+    if (!block) return NULL;
 
     u64 block_id = ( (u64)( ((void *)block) - pa->base ) ) / PA_BLOCK_SIZE;
 
-    // 该block_id 对应的 RefHead 一定为空
+    // 该block_id 对应的 RefHead
     RefBlockHeader *new_head = &( (RefBlockHeader *)(pa->rbh_base) )[block_id];
-    *out_head_ptr = new_head;
-    return block;
+    ref_head_init(new_head, level, false);
+
+    u64 slot_count = split_mem_to_list(
+        &new_head->free_list, block, 
+        PA_BLOCK_SIZE, pa->slot_level[level]
+    );
+
+    new_head->free_count = slot_count;
+    new_head->total_count = slot_count;
+
+    list_insert_front(&pa->slot_list[level], new_head);
+
+    return new_head;
 }
 
-/* 将一个块规划给 arena */
-static inline void block_recycle_imple(Block* block, Parena* pa, RefBlockHeader* head){
+/* 将一个块归还给 arena */
+static inline void block_recycle(Block* block, Parena* pa){
     pa->empty_block_count ++;
     ASSERT(pa->empty_block_count <= pa->block_count);
     list_insert_front(&pa->empty_list, block);
-    list_delete(&pa->rbh_list, head);
 }
 
-static inline void block_recycle(Block * block){
-    Parena *pa = get_global_parena_from_ptr(block, PA_BLOCK_SIZE);
-    RefBlockHeader* head = get_head_from_pa_and_ptr(pa, block);
-    block_recycle_imple(block, pa, head);
-}
+static inline void ref_block_recycle(Parena *pa, RefBlockHeader* head, void* block_ptr){
+    u64 a = ((u64)block_ptr) & ( ~( PA_BLOCK_SIZE - 1 ) );
 
+    // 1. 从 slot_list 中删除 head
+    list_delete(&pa->slot_list[head->slot_level], head);
+    // 2. 回收该 head 的 block
+    block_recycle((void *)a, pa);
 
-/* 该地址是否对该Parena有效 */
-static inline bool is_safe_ptr(Parena *a, void *ptr, size_t size){
-    bool res =  (
-        ( (u8*)ptr >= (u8*)a->base ) && 
-        ( ( (u8*)ptr + size ) <= ((u8*)a->base) + a->block_count * PA_BLOCK_SIZE )
-    );
-    return res;
 }
 
 /* 计算对应的 Slot 等级 如果返回 slot_level_count 说明查找错误 */
@@ -192,7 +200,7 @@ static inline bool check_level_valid(u64* l, u64 count){
     if (!count) return false;
     if (count > PA_BLOCK_SIZE) return false;
 
-    if (l[0] == 0) return false;
+    if (l[0] < sizeof(ListNode)) return false;
     for (u64 i = 1; i < count; i ++){
         if (l[i - 1] >= l[i]) return false;
     }
@@ -232,7 +240,6 @@ Parena *parena_new_imple(size_t size, ParenaOpt opt){
     pa->empty_block_count = block_count;
 
     list_init(&pa->empty_list);
-    list_init(&pa->rbh_list);
 
     if (opt.slot_level) {
         pa->slot_level       = opt.slot_level;
@@ -243,7 +250,7 @@ Parena *parena_new_imple(size_t size, ParenaOpt opt){
     }
 
     // 3. slot_list 数组
-    pa->slot_list = malloc(sizeof(List) * pa->slot_level_count);
+    pa->slot_list = (List *)malloc(sizeof(List) * pa->slot_level_count);
     if (!pa->slot_list) goto err_pa;
 
     for (i = 0; i < pa->slot_level_count; i++){
@@ -263,8 +270,6 @@ Parena *parena_new_imple(size_t size, ParenaOpt opt){
     rbh_base = (RefBlockHeader*) malloc(sizeof(RefBlockHeader) * block_count);
     if (!rbh_base) goto err_mmap;
 
-    for (i = 0; i < block_count; i++)
-        list_insert_front(&pa->rbh_list, &rbh_base[i]);
     pa->rbh_base = rbh_base;
 
     /* 6. 全局注册（提交点，失败即回滚） */
@@ -302,9 +307,20 @@ void parena_free(Parena* pa){
 // ================ slot function ================
 
 /* 获取一个 slot ptr 从对应等级的 slot_list 中 */
-void* slot_new(Parena *a, u16 level){
+void* slot_new(Parena *a, u64 level){
     List* slot_list = &a->slot_list[level];
-    RefBlockHeader* head = (RefBlockHeader*)slot_list[level].begin;
+    RefBlockHeader* head;
+
+    if (list_is_empty(slot_list)){
+        head = ref_block_new(a, level);
+        if (!head) return NULL;
+    }else{
+        head = list_get_front(slot_list);
+    }
+
+    // 1. 保证 head 不为 NULL
+    ASSERT(!list_is_empty(slot_list));
+
 
     // maybe while ?
     if (head->free_count == 0) {
@@ -327,10 +343,9 @@ void* slot_new(Parena *a, u16 level){
         }
 
         if (head->free_count == 0){
-            Block * new_block = block_new(a, &head);
-            if (!new_block) return NULL; // TODO : Add some statisical infomation to this case in future.
-                                         // It is mean that there is no useful memory anymore.
-            list_insert_front(&a->slot_list[level], head);
+            head = ref_block_new(a, level);
+            if (!head) return NULL; // TODO : Add some statisical infomation to this case in future.
+                                    // It is mean that there is no useful memory anymore.
         }
     }
 
@@ -358,88 +373,13 @@ void* parena_alloc_slot(Parena* pa, size_t size){
 }
 
 void parena_recycle_slot(void * ptr){
-    Parena *pa = get_global_parena_from_ptr(ptr, PA_BLOCK_SIZE);
+    Parena *pa = get_global_parena_from_ptr(ptr);
     RefBlockHeader* head = get_head_from_pa_and_ptr(pa, ptr);
-    list_insert_front(&head->free_list, ptr);
 
-    if (( ++ head->free_count ) == head->total_count){ 
+
+    if (( ++ (head->free_count) ) == head->total_count) { 
         if (!head->keep_alive){
-            block_recycle(ptr); // 删除该内存地址
+            ref_block_recycle(pa, head, ptr); // 删除该内存地址
         }
     }
-}
-
-void pchain_init(Parena *pa, Pchain* pc){
-    memset(pc, 0, sizeof(Pchain));
-    pc->parena = pa;
-}
-
-void pchain_head_init(PchainHead* head){
-    memset(head, 0, sizeof(PchainHead));
-}
-
-Pmark pchain_get_mark(Pchain* pc){
-    return (Pmark){
-        .mark = (void *)pc->list.end,
-        .belong = pc,
-        .tail_remain = pc->tail_remain
-    };
-}
-
-i64 pchain_rewind(Pchain *pc, Pmark mark){
-    if ( !(pc) || ( pc != mark.belong ) || !(pc->parena)){
-        pr_warn("mark not belong to pchain");
-        return -1;
-    }
-
-    size_t collected = 0;
-
-    while (pc->list.end != (ListNode *)mark.mark){
-        if (!pc->list.end) break;
-        Block *b = (Block *)pc->list.end;
-        list_delete_back(&pc->list);
-        block_recycle(b);
-        collected ++;
-    }
-
-    i64 res = (i64)collected * PCHAIN_BLOCK_SIZE - ((i64)pc->tail_remain - (i64)mark.tail_remain);
-    pc->tail_remain = mark.tail_remain;
-    return res;
-}
-
-bool pchain_append(Pchain* pc, size_t size){
-    Parena* pa = pc->parena;
-    if (size <= pc->tail_remain){
-        pc->tail_remain -= size;
-    }else{
-        size_t need_block = ceil_calc_block_count( size - pc->tail_remain );
-        size_t remain = need_block * PCHAIN_BLOCK_SIZE - ( size - pc->tail_remain );
-
-        u64 i;
-        Pmark mark = pchain_get_mark(pc);
-        for (i = 0; i < need_block ; i ++){
-            RefBlockHeader *head;
-            Block* new_block = block_new(pa, &head);
-
-            if (!new_block){
-                pchain_rewind(pc, mark);
-                return false;
-            }
-
-            list_insert_front(&pc->list, head);
-        }
-
-        pc->tail_remain = remain;
-    }
-    return true;
-}
-
-void pchain_recycle(Pchain *pc){
-    while (!list_is_empty(&pc->list)){
-        Block *b = (Block *)pc->list.end;
-        list_delete_back(&pc->list);
-        block_recycle(b);
-    }
-    pc->parena = NULL;
-    pc->tail_remain = 0;
 }
