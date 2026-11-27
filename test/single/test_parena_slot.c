@@ -165,6 +165,8 @@ void test_recycle(void){
     ASSERT(a);
 
     void *buffer[128];
+    memset(buffer, 0, sizeof(buffer));
+
     bool flag = true;
 
     for (int i = 0; i < 20; i ++){
@@ -176,7 +178,7 @@ void test_recycle(void){
     }
 
     test_expect("正常分配内存成功", flag, true);
-
+    if (!flag) return;
     
     for (int i = 0; i < 20; i ++){
         parena_recycle_slot(buffer[i]);
@@ -185,6 +187,8 @@ void test_recycle(void){
     test_note("释放正常");
 
     test_note("再次尝试分配");
+    memset(buffer, 0, sizeof(buffer));
+
     for (int i = 0; i < 127; i ++){
         buffer[i] = parena_alloc_slot(a, 200);
         if (!buffer[i]){
@@ -194,8 +198,10 @@ void test_recycle(void){
     }
 
     test_expect("正常分配内存成功 * 2", flag, true);
+    if (!flag) return;
 
     for (int i = 0; i < 127; i ++){
+        if (!buffer[i]) break;
         parena_recycle_slot(buffer[i]);
     }
 
@@ -232,7 +238,6 @@ int main(void){
 
     test_alloc_returns_writable(true);
     test_global_arena_behavior();
-
     test_slots_no_overlap();
     test_slots_write_isolation();
     test_alloc_oversize_fail();

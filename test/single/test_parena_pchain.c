@@ -15,7 +15,7 @@ static size_t pc_block_count(Pchain *pc) {
 
 // 理论可以分配的 pchain 大小
 static size_t get_theoretical_size(Parena* pa){
-    return pa->block_count * PCHAIN_BLOCK_SIZE;
+    return pa->block.cap * PCHAIN_BLOCK_SIZE;
 }
 
 void test_append_basic(void) {

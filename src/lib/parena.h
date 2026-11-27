@@ -60,6 +60,9 @@ void parena_free(Parena *pa);
 void *parena_alloc_slot(Parena *a,size_t size);
 void parena_recycle_slot(void * ptr);
 
+/* 返回能满足 need_size 的 slot_level 下标；找不到时返回 slot_level.cap */
+u64 parena_get_slot_level(Parena *pa, u64 need_size);
+
 // ================== parray ==================
 static inline void* parray_get(Parray* a, size_t idx){
     return a->data + idx * a->type_size;
@@ -71,4 +74,26 @@ static inline void parray_init(Parray* a, void *data, size_t cap, size_t type_si
     a->type_size = type_size;
 }
 
+typedef struct PchainBlock_S {
+    ListNode node;
+} PchainHead;
 
+#define PCHAIN_BLOCK_SIZE ( PA_BLOCK_SIZE - sizeof(PchainHead) )
+
+typedef struct Pchain_S {
+    List list;                  // Pc (PchainBlock) 链表
+    Parena* parena;             // 所属 Parena
+    size_t tail_remain;         // tail 剩余字节数量
+} Pchain;
+
+typedef struct Pmark_S{
+    Pchain* belong;
+    PchainHead* mark;
+    size_t tail_remain;
+}Pmark;
+
+void pchain_init(Parena *pa,Pchain *pc);
+bool pchain_append(Pchain *pc,size_t size);
+Pmark pchain_get_mark(Pchain *pc);
+i64 pchain_rewind(Pchain *pc,Pmark mark);
+void pchain_recycle(Pchain *pc);

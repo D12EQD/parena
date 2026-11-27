@@ -127,6 +127,9 @@ static inline void ref_head_init(RefBlockHeader *head, u64 level, bool keep_aliv
     list_init(&head->free_list);
 }
 
+/*
+ *  创建新的 RefBlockHeader 并且加入对应等级的链表中
+ */
 static inline RefBlockHeader *ref_block_new(Parena *pa, u64 level) {
     Block *block = block_new(pa);
     if (!block) return NULL;
@@ -283,62 +286,28 @@ void parena_free(Parena *pa) {
 /*
  *  return: 是否能通过调整链表找到一个 free_count > 0 的 head
  */
-static inline bool adjust_slot_list(List *slot_list, List * full_list, u64 max_count) {
-    ASSERT(!list_is_empty(slot_list));
-    RefBlockHeader *head = list_get_front(slot_list);
-    if (head->node.next) {
-        auto bef  = head;
 
-        do {
-            bef  = head;
-            head = (RefBlockHeader *)(head->node.next);
+void *slot_new(Parena *pa, u64 level) {
+    List *slot_list = &pa->slot_list[level];
+    List *full_list = &pa->slot_full_list[level];
 
-            list_delete_front(slot_list);
-            list_insert_front(full_list, bef);
-
-            if ((max_count --) == 0) break;
-            if (head == NULL) return false;
-        } while (head->free_count == 0);
-    }
-    return head->free_count > 0;
-}
-
-void *slot_new(Parena *a, u64 level) {
-    List *slot_list = &a->slot_list[level];
-    List *full_list = &a->slot_full_list[level];
     RefBlockHeader *head;
-
-    if (list_is_empty(slot_list)) {
-        head = ref_block_new(a, level);
+    if (list_is_empty(slot_list)){
+        head = ref_block_new(pa, level);
         if (!head) return NULL;
-    } else {
+    }else{
         head = list_get_front(slot_list);
     }
+ 
 
-    ASSERT(head != NULL);
-
-    if (head->free_count == 0) {
-        bool ret = adjust_slot_list(slot_list, full_list, 4);
-
-        if unlikely(!ret) {
-            head = ref_block_new(a, level);
-            if unlikely(!head){
-                ret = adjust_slot_list(slot_list, full_list, -1); // 无限调整，直到 slot_list 为空
-                if unlikely(!ret) return NULL;
-            }
-        }
-    }
-
-    ASSERT(head->free_count);
-    ASSERT(head->free_list.begin);
-
-    head->free_count--;
-
-    void *ret_ptr = list_get_front(&head->free_list);
+    void * ptr = list_get_front(&head->free_list);
     list_delete_front(&head->free_list);
-    ASSERT(is_safe_ptr(a, ret_ptr, slot_level_at(a, level)));
 
-    return ret_ptr;
+    if (-- head->free_count == 0){
+        list_delete_front(slot_list);
+        list_insert_front(full_list, head);
+    }
+    return ptr;
 }
 
 void *parena_alloc_slot(Parena *pa, size_t size) {
@@ -352,6 +321,7 @@ void *parena_alloc_slot(Parena *pa, size_t size) {
 }
 
 void parena_recycle_slot(void *ptr) {
+
     if unlikely(!ptr) PANIC("parena_recycle_slot Ptr is NULL?");
 
     Parena *pa = get_global_parena_from_ptr(ptr);
@@ -362,9 +332,92 @@ void parena_recycle_slot(void *ptr) {
     list_insert_front(&head->free_list, ptr);
     ASSERT(((u8 *)ptr - (u8 *)pa->block.data) % slot_level_at(pa, head->slot_level) == 0);
 
+    if (head->free_count == 0){
+        list_delete(&pa->slot_full_list[head->slot_level], head);
+        list_insert_front(&pa->slot_list[head->slot_level], head);
+    }
+
     if (++(head->free_count) == head->total_count) {
         if (!head->keep_alive) {
             ref_block_recycle(pa, head, ptr);
         }
     }
+}
+
+
+void pchain_init(Parena *pa, Pchain* pc){
+    memset(pc, 0, sizeof(Pchain));
+    pc->parena = pa;
+}
+
+void pchain_head_init(PchainHead* head){
+    memset(head, 0, sizeof(PchainHead));
+}
+
+Pmark pchain_get_mark(Pchain* pc){
+    return (Pmark){
+        .mark = (void *)pc->list.end,
+        .belong = pc,
+        .tail_remain = pc->tail_remain
+    };
+}
+
+i64 pchain_rewind(Pchain *pc, Pmark mark){
+    if ( !(pc) || ( pc != mark.belong ) || !(pc->parena)){
+        pr_warn("mark not belong to pchain");
+        return -1;
+    }
+
+    size_t collected = 0;
+
+    while (pc->list.end != (ListNode *)mark.mark){
+        if (!pc->list.end) break;
+        Block *b = (Block *)pc->list.end;
+        list_delete_back(&pc->list);
+        block_recycle(b, pc->parena);
+        collected ++;
+    }
+
+    i64 res = (i64)collected * PCHAIN_BLOCK_SIZE - ((i64)pc->tail_remain - (i64)mark.tail_remain);
+    pc->tail_remain = mark.tail_remain;
+    return res;
+}
+
+bool pchain_append(Pchain* pc, size_t size){
+    Parena* pa = pc->parena;
+    // pr_debug("pc->tail_remain = %ld, parena->empty_count = %ld", pc->tail_remain, pa->empty_block_count);
+
+    if (size <= pc->tail_remain){
+        pc->tail_remain -= size;
+    }else{
+        size_t need_block = (size - pc->tail_remain + PCHAIN_BLOCK_SIZE - 1) / PCHAIN_BLOCK_SIZE;
+        size_t remain = need_block * PCHAIN_BLOCK_SIZE - ( size - pc->tail_remain );
+
+        u64 i;
+        Pmark mark = pchain_get_mark(pc);
+        for (i = 0; i < need_block ; i ++){
+            Block* new_block = block_new(pa);
+
+            if (!new_block){
+                pchain_rewind(pc, mark);
+                return false;
+            }
+
+            list_insert_back(&pc->list, new_block);
+        }
+
+        pc->tail_remain = remain;
+    }
+    return true;
+}
+
+void pchain_recycle(Pchain *pc){
+    while (!list_is_empty(&pc->list)){
+        Block *b = (Block *)pc->list.end;
+        list_delete_back(&pc->list);
+        block_recycle(b, pc->parena);
+    }
+
+    pc->parena = NULL;
+    pc->tail_remain = 0;
 }
