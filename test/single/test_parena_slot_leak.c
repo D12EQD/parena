@@ -7,7 +7,7 @@
 #include "lib/logger.h"
 #include "lib/parena.h"
 #include "frame/test_frame.h"
-void *buffer[100000];
+void *buffer[1000000];
 
 void test_mem_leak(){
     Parena * pa = parena_new(0);
@@ -19,7 +19,7 @@ void test_mem_leak(){
         while (1){
             size_t sz = rand() % 64 + 1;
             buffer[idx] = parena_alloc_slot(pa, sz);
-            pr_debug("idx = %d", idx);
+            // pr_debug("idx = %d", idx);
             if (!buffer[idx]){
                 if (top_size == -1) top_size = idx;
                 else{

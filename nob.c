@@ -29,7 +29,7 @@ static const char *CC_FLAG[] = {
 };
 #define CC_FLAG_COUNT (sizeof(CC_FLAG) / sizeof(CC_FLAG[0]))
 
-static const char *D_FLAG[] = { "-g3", "-g", "-pg"};
+static const char *D_FLAG[] = { "-g3", "-g", "-pg", "-fsanitize=address"};
 #define D_FLAG_COUNT (sizeof(D_FLAG) / sizeof(D_FLAG[0]))
 
 Nob_Cmd gcc_flag = {0};

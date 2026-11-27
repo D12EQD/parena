@@ -25,6 +25,7 @@ compile_commands.json
 # 其他文件
 test/*.txt
 test/data/
+gmon.out
 
 # 编辑器临时文件
 *~

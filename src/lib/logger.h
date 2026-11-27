@@ -36,7 +36,6 @@ static inline void pr_debug_bits(u8 *data, u64 size){
     }
 }
 
-#define DEVELOPMENT_MODE
 #ifdef DEVELOPMENT_MODE
 #define PANIC(fmt, ...)                 \
     do{                                 \

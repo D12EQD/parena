@@ -31,16 +31,21 @@ typedef struct Block_t{
     u8 __data[PA_BLOCK_SIZE];
 }Block;
 
+typedef struct{
+    void *data;         // 数据地址
+    size_t type_size;   // 每个物品的大小
+    size_t cap;         // 当前容积
+}Parray;
+
 /* Ping's Arena manager = Parena */
 typedef struct Parena_s{
     List empty_list;                        // 空闲块链表
-    List* slot_list;                        // slot 链表 存放不同等级的 rbh
-    void *base;                             // 内存起始地址，用于合法内存范围判断
-    void *rbh_base;                         // rbh base 地址
-    u64 block_count;                        // 内存块数量
-    u64 empty_block_count;                  // 内存空闲块数量
-    u64* slot_level;                        // 内置 slot_level 等级，支持用户输入自己想要的等级分配
-    u64 slot_level_count;                   // slot_level 等级数量
+    List* slot_list;                        // slot 可用链表 存放不同等级的 rbh
+    List* slot_full_list;                   // slot 满链表 存放不同等级的 rbh
+    Parray rbh;
+    Parray block;
+    Parray slot_level;
+    u64 empty_block_count;                  // 当前空闲 Block 数量
 } Parena;
 
 typedef struct {
@@ -54,4 +59,16 @@ Parena* parena_new_imple(size_t size, ParenaOpt opt);
 void parena_free(Parena *pa);
 void *parena_alloc_slot(Parena *a,size_t size);
 void parena_recycle_slot(void * ptr);
+
+// ================== parray ==================
+static inline void* parray_get(Parray* a, size_t idx){
+    return a->data + idx * a->type_size;
+}
+
+static inline void parray_init(Parray* a, void *data, size_t cap, size_t type_size){
+    a->data = data;
+    a->cap = cap;
+    a->type_size = type_size;
+}
+
 

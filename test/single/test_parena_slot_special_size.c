@@ -23,7 +23,7 @@ static inline double now_ns(void) {
     return (double)ts.tv_sec * 1e9 + (double)ts.tv_nsec;
 }
 
-static void pr(const char *name, size_t nops, double ns) {
+static void print_time(const char *name, size_t nops, double ns) {
     if (!nops || ns <= 0) return;
     pr_cont_debug("%-52s %10zu ops  %10.2f ms  %9.2f ns/op  %9.2f Mops/s\n",
            name, nops, ns / 1e6,
@@ -52,7 +52,7 @@ static void test_pure_alloc(size_t size, const char *tag) {
         if (i == 32766){
             break;
         }
-        if (t) parena_recycle_slot(a, t);
+        if (t) parena_recycle_slot(t);
     }
 
     double t0 = now_ns();
@@ -67,16 +67,16 @@ static void test_pure_alloc(size_t size, const char *tag) {
 
     char lbl[128];
     snprintf(lbl, sizeof(lbl), "A1 pure alloc [%-5s size=%4zu]", tag, size);
-    pr(lbl, ok, t1 - t0);
+    print_time(lbl, ok, t1 - t0);
     if (ok < PURE_MAX)
         pr_cont_debug("   (arena exhausted after %zu allocs)\n", ok);
 
     t0 = now_ns();
     for (size_t i = 0; i < ok; i++)
-        if (ptrs[i]) parena_recycle_slot(a, ptrs[i]);
+        if (ptrs[i]) parena_recycle_slot(ptrs[i]);
     t1 = now_ns();
     snprintf(lbl, sizeof(lbl), "A2 pure free  [%-5s size=%4zu]", tag, size);
-    pr(lbl, ok, t1 - t0);
+    print_time(lbl, ok, t1 - t0);
 
     free(ptrs);
     parena_free(a);
@@ -95,20 +95,22 @@ static void test_steady(size_t size, const char *tag, size_t n_target, size_t it
     for (size_t i = 0; i < n_target; i++) {
         live[i] = parena_alloc_slot(a, size);
         if (!live[i]) break;
-        filled++;
+        filled ++;
     }
-    if (!filled) { free(live); parena_free(a); return; }
+    if (!filled) { 
+        free(live); parena_free(a); return; 
+    }
 
     /* 预热 */
     for (size_t i = 0; i < WARMUP_ITERS && i < filled; i++) {
-        parena_recycle_slot(a, live[i]);
+        parena_recycle_slot(live[i]);
         live[i] = parena_alloc_slot(a, size);
     }
 
     double t0 = now_ns();
     size_t idx = 0;
     for (size_t i = 0; i < iters; i++) {
-        parena_recycle_slot(a, live[idx]);
+        parena_recycle_slot(live[idx]);
         live[idx] = parena_alloc_slot(a, size);
         if (++idx >= filled) idx = 0;
     }
@@ -118,10 +120,10 @@ static void test_steady(size_t size, const char *tag, size_t n_target, size_t it
 
     char lbl[128];
     snprintf(lbl, sizeof(lbl), "B  steady a+f [%-5s size=%4zu n=%zu]", tag, size, filled);
-    pr(lbl, iters * 2, t1 - t0);
+    print_time(lbl, iters * 2, t1 - t0);
 
     for (size_t i = 0; i < filled; i++)
-        if (live[i]) parena_recycle_slot(a, live[i]);
+        if (live[i]) parena_recycle_slot(live[i]);
     free(live);
     parena_free(a);
 }
@@ -138,7 +140,7 @@ static void test_burst(size_t size, const char *tag) {
     for (int w = 0; w < 200; w++) {
         for (size_t i = 0; i < BURST_N; i++) arr[i] = parena_alloc_slot(a, size);
         for (size_t i = 0; i < BURST_N; i++) {
-            if (arr[i]) parena_recycle_slot(a, arr[i]);
+            if (arr[i]) parena_recycle_slot(arr[i]);
             arr[i] = NULL;
         }
     }
@@ -147,7 +149,7 @@ static void test_burst(size_t size, const char *tag) {
     for (int r = 0; r < BURST_ROUNDS; r++) {
         for (size_t i = 0; i < BURST_N; i++) arr[i] = parena_alloc_slot(a, size);
         for (size_t i = 0; i < BURST_N; i++) {
-            if (arr[i]) parena_recycle_slot(a, arr[i]);
+            if (arr[i]) parena_recycle_slot(arr[i]);
             arr[i] = NULL;
         }
     }
@@ -156,7 +158,7 @@ static void test_burst(size_t size, const char *tag) {
 
     char lbl[128];
     snprintf(lbl, sizeof(lbl), "C  burst      [%-5s size=%4zu N=%d]", tag, size, BURST_N);
-    pr(lbl, (size_t)BURST_ROUNDS * BURST_N * 2, t1 - t0);
+    print_time(lbl, (size_t)BURST_ROUNDS * BURST_N * 2, t1 - t0);
 
     free(arr);
     parena_free(a);
@@ -197,7 +199,7 @@ static void test_mixed(size_t iters) {
     for (size_t i = 0; i < iters; i++) {
         size_t slot = i % SLOTS;
         if (ring[slot]) {
-            parena_recycle_slot(a, ring[slot]);
+            parena_recycle_slot(ring[slot]);
             ops++;
         }
         size_t sz; PICK_SIZE(sz);
@@ -212,10 +214,10 @@ static void test_mixed(size_t iters) {
     double t1 = now_ns();
     #undef PICK_SIZE
 
-    pr("D  mixed size alloc+free", ops, t1 - t0);
+    print_time("D  mixed size alloc+free", ops, t1 - t0);
 
     for (size_t i = 0; i < SLOTS; i++)
-        if (ring[i]) parena_recycle_slot(a, ring[i]);
+        if (ring[i]) parena_recycle_slot(ring[i]);
     parena_free(a);
 }
 
@@ -258,7 +260,7 @@ void test_mem_leak(){
         }
 
         for (int j = 0; j <= idx; j ++){
-            parena_recycle_slot(pa, buffer[j]);
+            parena_recycle_slot(buffer[j]);
         }
     }
 
@@ -302,6 +304,8 @@ void test_init(){
 
 int main(void) {
     test_init();
-    test_mixed(200000000);
+    pr_cont_debug("\n--- B. Steady state (alloc+free pair, live set fixed) ---\n");
+    test_backup();
+
     return 0;
 }
