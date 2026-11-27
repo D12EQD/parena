@@ -385,7 +385,6 @@ i64 pchain_rewind(Pchain *pc, Pmark mark){
 
 bool pchain_append(Pchain* pc, size_t size){
     Parena* pa = pc->parena;
-    // pr_debug("pc->tail_remain = %ld, parena->empty_count = %ld", pc->tail_remain, pa->empty_block_count);
 
     if (size <= pc->tail_remain){
         pc->tail_remain -= size;

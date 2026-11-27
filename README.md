@@ -22,7 +22,6 @@ Only build
 ./build/nob -d build test/single/*.c
 ```
 
-
 ## Thanks
 
 - [ngnix](https://github.com/nginx/nginx)

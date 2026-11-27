@@ -1,21 +1,29 @@
 #pragma once
+
 #include <stdlib.h>
 #include <stdint.h>
 #include "def.h"
 #include "linklist.h"
 
+struct Parena_s;
+
+#ifndef PA_LIMIT_BLOCK
 #define PA_LIMIT_BLOCK 2048 // 2048 * 4096
+#endif
+
+#ifndef PA_BLOCK_LOG_SIZE
+
 #define PA_BLOCK_LOG_SIZE 12
 #define PA_BLOCK_SIZE (1 << PA_BLOCK_LOG_SIZE) /* default page size */
 #define PA_LIMIT_SIZE PA_LIMIT_BLOCK * PA_BLOCK_SIZE
 
-struct Parena_s;
+#else
 
-static const u64 SLOT_LEVEL[] = {
-    16, 32, 64, 128, 256, 512, 1024, 2048, 4096
-};
+#define PA_BLOCK_SIZE (1 << PA_BLOCK_LOG_SIZE)
+#define PA_LIMIT_SIZE PA_LIMIT_BLOCK * PA_BLOCK_SIZE
 
-#define SLOT_LEVEL_COUNT ( sizeof(SLOT_LEVEL)/sizeof(SLOT_LEVEL[0]))
+#endif
+
 
 // size == 40B 对齐 8B
 typedef struct RefBlockHeader_S {
@@ -63,16 +71,6 @@ void parena_recycle_slot(void * ptr);
 /* 返回能满足 need_size 的 slot_level 下标；找不到时返回 slot_level.cap */
 u64 parena_get_slot_level(Parena *pa, u64 need_size);
 
-// ================== parray ==================
-static inline void* parray_get(Parray* a, size_t idx){
-    return a->data + idx * a->type_size;
-}
-
-static inline void parray_init(Parray* a, void *data, size_t cap, size_t type_size){
-    a->data = data;
-    a->cap = cap;
-    a->type_size = type_size;
-}
 
 typedef struct PchainBlock_S {
     ListNode node;
@@ -97,3 +95,19 @@ bool pchain_append(Pchain *pc,size_t size);
 Pmark pchain_get_mark(Pchain *pc);
 i64 pchain_rewind(Pchain *pc,Pmark mark);
 void pchain_recycle(Pchain *pc);
+
+// ================== implement ==================
+static inline void* parray_get(Parray* a, size_t idx){
+    return a->data + idx * a->type_size;
+}
+
+static inline void parray_init(Parray* a, void *data, size_t cap, size_t type_size){
+    a->data = data;
+    a->cap = cap;
+    a->type_size = type_size;
+}
+
+static const u64 SLOT_LEVEL[] = {
+    16, 32, 64, 128, 256, 512, 1024, 2048, 4096
+};
+#define SLOT_LEVEL_COUNT ( sizeof(SLOT_LEVEL)/sizeof(SLOT_LEVEL[0]))
