@@ -1,10 +1,1 @@
-CompileFlags:
-  Add:
-    - -Iinclude
-    - -Isrc
-    - -I.
-    - -std=c23
-    - -Wall
-    - -Wextra
-InlayHints:
-  ParameterNames: No          # 不显示普通参数名
+/home/ping/.clangd

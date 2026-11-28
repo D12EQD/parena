@@ -24,16 +24,16 @@ void test_append_basic(void) {
     Pchain pc = {0};
     pchain_init(pa, &pc);
 
-    test_expect("init 后链为空", list_is_empty(&pc.list), true);
-    test_expect("单次 10B append", pchain_append(&pc, 10), true);
-    test_expect("append 后有 1 个块", pc_block_count(&pc) == 1, true);
-    test_expect("tail_remain < PA_BLOCK_SIZE", pc.tail_remain < PA_BLOCK_SIZE, true);
+    test_expect("init 后链为空", list_is_empty(&pc.list));
+    test_expect("单次 10B append", pchain_append(&pc, 10));
+    test_expect("append 后有 1 个块", pc_block_count(&pc) == 1 );
+    test_expect("tail_remain < PA_BLOCK_SIZE", pc.tail_remain < PA_BLOCK_SIZE );
 
-    test_expect("再填满 tail", pchain_append(&pc, pc.tail_remain), true);
-    test_expect("tail 填满后 remain=0", pc.tail_remain == 0, true);
+    test_expect("再填满 tail", pchain_append(&pc, pc.tail_remain) );
+    test_expect("tail 填满后 remain=0", pc.tail_remain == 0 );
 
-    test_expect("触发 grow 成功", pchain_append(&pc, 100), true);
-    test_expect("grow 后 >1 块", pc_block_count(&pc) >= 2, true);
+    test_expect("触发 grow 成功", pchain_append(&pc, 100));
+    test_expect("grow 后 >1 块", ( pc_block_count(&pc) >= 2 ));
 
     pchain_recycle(&pc);
     parena_free(pa);
@@ -71,7 +71,7 @@ void test_correct_size(void){
         pchain_recycle(&pc);
     }
 
-    test_expect("所有容积可以完成分配", flag, true);
+    test_expect("所有容积可以完成分配", flag);
 }
 
 void test_mark(void){
@@ -98,7 +98,7 @@ void test_mark(void){
         }
     }
 
-    test_expect("Mark 测试完成", true, true);
+    test_expect("Mark 测试完成", true);
 }
 
 int main(void) {
